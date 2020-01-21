@@ -1,0 +1,12 @@
+*.log
+.vagrant/
+pass/lib/
+pass/src/pass.o
+pass/utils/emit_file
+pass/utils/emit_freq
+pass/utils/frequency_bins
+pass/utils/multi_octave_bands
+pass/utils/octave_bands
+pass/utils/spectrogram
+pass/utils/wav_file
+pass/utils/view/cmd/view/view

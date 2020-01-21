@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+
+    <style>
+        .graphBlocks {
+            stroke: black;
+            fill: white;
+        }
+        .graphXAxis .tick {
+            stroke: white;
+        }
+
+        .graphXAxis line {
+            stroke: white;
+        }
+
+        .graphXAxis path {
+            stroke: white;
+        }
+
+        .graphYAxis .tick {
+            stroke: white;
+        }
+
+        .graphYAxis line {
+            stroke: white;
+        }
+
+        .graphYAxis path {
+            stroke: white;
+        }
+
+        body {
+            background-color: black;
+        }
+    </style>
+
+    <title>view</title>
+  </head>
+  <body>
+    <div class="container">
+        <div class="row">
+            <div class="col-sm-1"></div>
+
+            <div class="col-sm-9">
+                <form id="selectionForm" class="form-inline">
+                    <div class="form-group row">
+                        <select id="graphSelection" class="custom-select">
+                            <option value="octavebands" selected>Octave Bands</option>
+                            <option value="frequencybins">Frequency Bins</option>
+                        </select>
+                        <input type="number" class="form-control" id="sensorSelection" placeholder="sensor">
+                        <input type="number" class="form-control" id="channelSelection" placeholder="channel">
+                    </div>
+                </form>
+            </div>
+
+            <div class="col-sm-1">
+                <button id="selectionButton" type="submit" class="btn btn-primary">Update</button>
+            </div>
+
+            <div class="col-sm-1"></div>
+        </div>
+
+        <div class="row">
+            <div class="col-sm-1"></div>
+
+            <div class="col-sm-10">
+                <div id="graph"> </div>
+            </div>
+
+            <div class="col-sm-1"></div>
+        </div>
+    </div>
+
+    <!-- Optional JavaScript -->
+    <!-- jQuery first, then Popper.js, then Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.4.1.slim.min.js" integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js" integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6" crossorigin="anonymous"></script>
+    <script src="https://d3js.org/d3.v4.min.js"></script>
+  </body>
+</html>
+
+<script>
+$(document).ready(function () {
+    var currentType = "";
+    var socket = null;
+    var x, y;
+
+    var selectionButton = $('#selectionButton');
+    selectionButton.on("click", function() {
+        console.log("selectionButton");
+
+        var graphSelection = $('#graphSelection').val();
+        var sensorSelection = parseInt( $('#sensorSelection').val(), 10 );
+        var channelSelection = parseInt( $('#channelSelection').val(), 10 );
+        var msg = {
+            type: graphSelection,
+            sensor: sensorSelection,
+            channel: channelSelection
+        };
+
+        jsn = JSON.stringify(msg);
+        console.log(jsn);
+
+        if (!socket) {
+            console.log("no socket");
+        } else {
+            socket.send(jsn);
+        }
+    });
+
+    function connect(source) {
+        // use global var `socket`
+        if (socket != null) {
+            socket.close();
+        }
+
+        if (!window["WebSocket"]) { 
+            alert("error: your browser does not support web sockets.");
+        } else {
+            socket = new WebSocket(source);
+
+            socket.onopen = function() {
+                console.log("socket opened");
+            }
+
+            socket.onclose = function() {
+                console.log("socket closed");
+            }
+
+            socket.onmessage = function(e) {
+                msg = JSON.parse(e.data);
+                update(msg);
+            }
+        }
+    }
+
+    function update(msg) {
+        console.log(msg)
+
+        var yData = msg.values;
+
+        data = []
+        len = yData.length
+        for (var i = 0; i < yData.length; i++) {
+            yVal = ((yData[i] > -220) ? yData[i] : -220)
+            switch (msg.type) {
+            case "octavebands":
+                data.push({ 'x': i+10, 'y': yVal })
+                break;
+            case "frequencybins":
+                data.push({ 'x': i+1, 'y': yVal })
+                break;
+            default:
+                console.log("unknown graph type")
+                return
+            }
+        }
+
+        var svg = null;
+        var g = null;
+
+        // global variable `currentType`
+        if (currentType != msg.type) {
+            currentType = msg.type;
+
+            var dims = svg_add("graph");
+            var gWidth = dims.width;
+            var gHeight = dims.height;
+
+            svg = d3.select("#graph")
+            g = svg.select("g")
+
+            x = d3.scaleBand()
+                    .domain(data.map(function(d, i) {return d.x }))
+                    .rangeRound([0, gWidth])
+
+            y = d3.scaleLinear()
+                    .domain([0, -230])
+                    .range([0, gHeight])
+
+            var xAxis = d3.axisTop(x)
+                            .tickValues(d3.range(data[0].x, data[(len-1)].x, 10));
+    
+            g.append('g')
+                .attr('class', 'graphXAxis')
+                .call(xAxis)
+            
+            var yAxis = d3.axisLeft(y)
+            g.append('g')
+                .attr('class', 'graphYAxis')
+                .call(yAxis)
+        } else {
+            svg = d3.select("#graph")
+            g = svg.select("g")
+        }
+
+        var rects = g.selectAll('rect')
+                        .data(data)
+
+        var enterRects = rects.enter()
+                                .append('rect')
+                                .attr('x', function(d, i) { return x(d.x) })
+                                .attr('width', x.bandwidth())
+                                .attr('class', 'graphBlocks')
+
+        rects.merge(enterRects)
+                .attr('y', function(d, i) { return y(0)})
+                .attr('height', function(d, i) { return y(d.y) })
+    }
+
+    function svg_add(idGraph) {
+        d3.selectAll("svg").remove()
+
+        var svgWidth = document.getElementById(idGraph).clientWidth;
+        var svgHeight = svgWidth / 1.61;
+
+        var lMargin = svgWidth * 0.1
+        var rMargin = svgWidth * 0.1
+        var tMargin = svgHeight * 0.15
+        var bMargin = svgHeight * 0.05
+
+        var svg = d3.select(("#" + idGraph))
+                    .append("svg")
+                    .attr("height", svgHeight)
+                    .attr("width", svgWidth)
+
+        var gWidth = svgWidth - (lMargin + rMargin)
+        var gHeight = svgHeight - (tMargin + bMargin)
+        var gTranslate = [lMargin, tMargin]
+
+        svg.append('g')
+            .attr('width', gWidth)
+            .attr('height', gHeight)
+            .attr('transform', 'translate(' + gTranslate[0] + ', ' + gTranslate[1] + ')')
+        
+        return {"width": gWidth, "height": gHeight};
+    }
+
+    svg_add("graph");
+    connect("ws://localhost:5100/data");
+});
+</script>
